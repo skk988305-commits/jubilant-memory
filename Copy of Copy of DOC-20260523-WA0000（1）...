@@ -1,0 +1,81 @@
+import time
+import requests
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+
+# আপনার টোকেন এবং API কী এখানে বসান
+BOT_TOKEN = "8833161185:AAE_hn_3yg9Py7KJJGQSZswD5OR5aH3rGsc"
+SMS_API_KEY = "eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4MTEwMDg2OTAsImlhdCI6MTc3OTQ3MjY5MCwicmF5IjoiNGFmZWRkMTk3OTFkYzE1NGE4MmVlMWViNTZiYjczYzMiLCJzdWIiOjQxMDgzMDZ9.Aqle3TTMgOJFWsr7A69UrXuY_vXUTP1VnWKTEbjME0b6-MOF4L8lz4TZ5mpuF-WMBEFzYZ75eo3C5-2PpCeDCjuGy2b_Nj4OtNjx0i6T39L5uNtVastvLm_vBfynTwN_14aYG8S1SJtmyGk_-7dV5JiPDddNPrxp_B0OpFHcWzgYnQjqi9BuwohJB9ZxOG2mevukzY8lXhJVAMVmGS0Nej6dVjii9XFC8aQ3eAwsRtxxCX0Ok95ctxIaSkvY0lkkqtLLllQx628oSAR7sa7kYEh3D1VxyT3UByd3xrvgQrjZ5Smq_yToaW76qwwaxV97d_jzqZ1h2mL9gSinemuK5g"
+
+HEADERS = {
+    "Authorization": f"Bearer {SMS_API_KEY}",
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [
+        [InlineKeyboardButton(" USA Number (Telegram)", callback_data="buy_usa_tg")],
+        [InlineKeyboardButton(" UK Number (Instagram)", callback_data="buy_uk_ig")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("স্বাগতম! নম্বর অর্ডার করুন:", reply_markup=reply_markup)
+
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    country = "usa"
+    product = "telegram"
+    if query.data == "buy_uk_ig":
+        country = "england"
+        product = "instagram"
+    await query.edit_message_text(text=" নম্বর খোঁজা হচ্ছে...")
+    url = f"https://5sim.net{country}/any/{product}"
+    try:
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            data = response.json()
+            order_id = data["id"]
+            phone_number = data["phone"]
+            await query.edit_message_text(text=f"✅ নম্বর: `{phone_number}`\n অর্ডার আইডি: `{order_id}`\n\n⚠️ ওটিপি পাঠিয়ে নিচের বাটনে চাপ দিন।")
+            otp_keyboard = [[InlineKeyboardButton(" OTP চেক করুন", callback_data=f"check_{order_id}")]]
+            reply_markup = InlineKeyboardMarkup(otp_keyboard)
+            await query.message.reply_text("কোড পাঠানো হলে নিচের বাটনে ক্লিক করুন:", reply_markup=reply_markup)
+        else:
+            await query.edit_message_text(text="❌ নম্বর পাওয়া যায়নি বা ব্যালেন্স শেষ।")
+    except Exception as e:
+        await query.edit_message_text(text="❌ সার্ভারে সমস্যা হচ্ছে।")
+
+async def check_otp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    order_id = query.data.split("_")
+    await query.edit_message_text(text=" OTP চেক করা হচ্ছে...")
+    url = f"https://5sim.net{order_id}"
+    try:
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            data = response.json()
+            sms_list = data.get("sms", [])
+            if sms_list:
+                otp_code = sms_list["code"]
+                await query.edit_message_text(text=f" আপনার OTP কোড: `{otp_code}`")
+            else:
+                otp_keyboard = [[InlineKeyboardButton(" আবার চেক করুন", callback_data=f"check_{order_id}")]]
+                reply_markup = InlineKeyboardMarkup(otp_keyboard)
+                await query.edit_message_text(text=f"⏳ ওটিপি আসেনি। আবার চেষ্টা করুন।", reply_markup=reply_markup)
+        else:
+            await query.edit_message_text(text="❌ ওটিপি চেক করতে সমস্যা হচ্ছে।")
+    except Exception as e:
+        await query.edit_message_text(text="❌ ত্রুটি ঘটেছে।")
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_buttons, pattern="^buy_"))
+    app.add_handler(CallbackQueryHandler(check_otp, pattern="^check_"))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+
